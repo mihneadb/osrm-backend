@@ -23,18 +23,18 @@ namespace node_osrm
 
 Engine::Engine(osrm::EngineConfig &config) : Base(), this_(std::make_shared<osrm::OSRM>(config)) {}
 
-Nan::Persistent<v8::Function> &Engine::constructor()
+Napi::FunctionReference &Engine::constructor()
 {
-    static Nan::Persistent<v8::Function> init;
+    static Napi::FunctionReference init;
     return init;
 }
 
-NAN_MODULE_INIT(Engine::Init)
+Napi::Object Engine::Init(Napi::Env env, Napi::Object exports)
 {
-    const auto whoami = Nan::New("OSRM").ToLocalChecked();
+    const auto whoami = Napi::String::New(env, "OSRM");
 
-    auto fnTp = Nan::New<v8::FunctionTemplate>(New);
-    fnTp->InstanceTemplate()->SetInternalFieldCount(1);
+    auto fnTp = Napi::Function::New(env, New);
+
     fnTp->SetClassName(whoami);
 
     SetPrototypeMethod(fnTp, "route", route);
@@ -44,11 +44,11 @@ NAN_MODULE_INIT(Engine::Init)
     SetPrototypeMethod(fnTp, "match", match);
     SetPrototypeMethod(fnTp, "trip", trip);
 
-    const auto fn = Nan::GetFunction(fnTp).ToLocalChecked();
+    const auto fn = Napi::GetFunction(fnTp);
 
     constructor().Reset(fn);
 
-    Nan::Set(target, whoami, fn);
+    (target).Set(whoami, fn);
 }
 
 // clang-format off
@@ -88,7 +88,7 @@ NAN_MODULE_INIT(Engine::Init)
  *
  */
 // clang-format on
-NAN_METHOD(Engine::New)
+Napi::Value Engine::New(const Napi::CallbackInfo& info)
 {
     if (info.IsConstructCall())
     {
@@ -103,20 +103,21 @@ NAN_METHOD(Engine::New)
         }
         catch (const std::exception &ex)
         {
-            return Nan::ThrowTypeError(ex.what());
+            Napi::TypeError::New(env, ex.what()).ThrowAsJavaScriptException();
+            return env.Null();
         }
 
-        info.GetReturnValue().Set(info.This());
+        return info.This();
     }
     else
     {
-        return Nan::ThrowTypeError(
+        return Napi::ThrowTypeError(
             "Cannot call constructor as function, you need to use 'new' keyword");
     }
 }
 
 template <typename ParameterParser, typename ServiceMemFn>
-inline void async(const Nan::FunctionCallbackInfo<v8::Value> &info,
+inline void async(const Napi::CallbackInfo&info,
                   ParameterParser argsToParams,
                   ServiceMemFn service,
                   bool requires_multiple_coordinates)
@@ -130,19 +131,20 @@ inline void async(const Nan::FunctionCallbackInfo<v8::Value> &info,
     BOOST_ASSERT(params->IsValid());
 
     if (!info[info.Length() - 1]->IsFunction())
-        return Nan::ThrowTypeError("last argument must be a callback function");
+        Napi::TypeError::New(env, "last argument must be a callback function").ThrowAsJavaScriptException();
+        return env.Null();
 
-    auto *const self = Nan::ObjectWrap::Unwrap<Engine>(info.Holder());
+    auto *const self = info.Holder().Unwrap<Engine>();
     using ParamPtr = decltype(params);
 
-    struct Worker final : Nan::AsyncWorker
+    struct Worker final : Napi::AsyncWorker
     {
-        using Base = Nan::AsyncWorker;
+        using Base = Napi::AsyncWorker;
 
         Worker(std::shared_ptr<osrm::OSRM> osrm_,
                ParamPtr params_,
                ServiceMemFn service,
-               Nan::Callback *callback,
+               Napi::FunctionReference *callback,
                PluginParameters pluginParams_)
             : Base(callback), osrm{std::move(osrm_)}, service{std::move(service)},
               params{std::move(params_)}, pluginParams{std::move(pluginParams_)}
@@ -172,12 +174,12 @@ inline void async(const Nan::FunctionCallbackInfo<v8::Value> &info,
             SetErrorMessage(e.what());
         }
 
-        void HandleOKCallback() override
+        void OnOK() override
         {
-            Nan::HandleScope scope;
+            Napi::HandleScope scope(env);
 
             const constexpr auto argc = 2u;
-            v8::Local<v8::Value> argv[argc] = {Nan::Null(), render(result)};
+            Napi::Value argv[argc] = {env.Null(), render(result)};
 
             callback->Call(argc, argv);
         }
@@ -191,13 +193,13 @@ inline void async(const Nan::FunctionCallbackInfo<v8::Value> &info,
         ObjectOrString result;
     };
 
-    auto *callback = new Nan::Callback{info[info.Length() - 1].As<v8::Function>()};
-    Nan::AsyncQueueWorker(
+    auto *callback = new Napi::FunctionReference{info[info.Length() - 1].As<Napi::Function>()};
+    Napi::AsyncQueueWorker(
         new Worker{self->this_, std::move(params), service, callback, std::move(pluginParams)});
 }
 
 template <typename ParameterParser, typename ServiceMemFn>
-inline void asyncForTiles(const Nan::FunctionCallbackInfo<v8::Value> &info,
+inline void asyncForTiles(const Napi::CallbackInfo&info,
                           ParameterParser argsToParams,
                           ServiceMemFn service,
                           bool requires_multiple_coordinates)
@@ -211,19 +213,20 @@ inline void asyncForTiles(const Nan::FunctionCallbackInfo<v8::Value> &info,
     BOOST_ASSERT(params->IsValid());
 
     if (!info[info.Length() - 1]->IsFunction())
-        return Nan::ThrowTypeError("last argument must be a callback function");
+        Napi::TypeError::New(env, "last argument must be a callback function").ThrowAsJavaScriptException();
+        return env.Null();
 
-    auto *const self = Nan::ObjectWrap::Unwrap<Engine>(info.Holder());
+    auto *const self = info.Holder().Unwrap<Engine>();
     using ParamPtr = decltype(params);
 
-    struct Worker final : Nan::AsyncWorker
+    struct Worker final : Napi::AsyncWorker
     {
-        using Base = Nan::AsyncWorker;
+        using Base = Napi::AsyncWorker;
 
         Worker(std::shared_ptr<osrm::OSRM> osrm_,
                ParamPtr params_,
                ServiceMemFn service,
-               Nan::Callback *callback,
+               Napi::FunctionReference *callback,
                PluginParameters pluginParams_)
             : Base(callback), osrm{std::move(osrm_)}, service{std::move(service)},
               params{std::move(params_)}, pluginParams{std::move(pluginParams_)}
@@ -242,13 +245,13 @@ inline void asyncForTiles(const Nan::FunctionCallbackInfo<v8::Value> &info,
             SetErrorMessage(e.what());
         }
 
-        void HandleOKCallback() override
+        void OnOK() override
         {
-            Nan::HandleScope scope;
+            Napi::HandleScope scope(env);
 
             const constexpr auto argc = 2u;
             auto str_result = result.get<std::string>();
-            v8::Local<v8::Value> argv[argc] = {Nan::Null(), render(str_result)};
+            Napi::Value argv[argc] = {env.Null(), render(str_result)};
 
             callback->Call(argc, argv);
         }
@@ -262,8 +265,8 @@ inline void asyncForTiles(const Nan::FunctionCallbackInfo<v8::Value> &info,
         osrm::engine::api::ResultT result;
     };
 
-    auto *callback = new Nan::Callback{info[info.Length() - 1].As<v8::Function>()};
-    Nan::AsyncQueueWorker(
+    auto *callback = new Napi::FunctionReference{info[info.Length() - 1].As<Napi::Function>()};
+    Napi::AsyncQueueWorker(
         new Worker{self->this_, std::move(params), service, callback, std::move(pluginParams)});
 }
 
@@ -302,7 +305,7 @@ inline void asyncForTiles(const Nan::FunctionCallbackInfo<v8::Value> &info,
  * });
  */
 // clang-format on
-NAN_METHOD(Engine::route) //
+Napi::Value Engine::route(const Napi::CallbackInfo& info) //
 {
     async(info, &argumentsToRouteParameter, &osrm::OSRM::Route, true);
 }
@@ -342,7 +345,7 @@ NAN_METHOD(Engine::route) //
  * });
  */
 // clang-format on
-NAN_METHOD(Engine::nearest) //
+Napi::Value Engine::nearest(const Napi::CallbackInfo& info) //
 {
     async(info, &argumentsToNearestParameter, &osrm::OSRM::Nearest, false);
 }
@@ -394,7 +397,7 @@ NAN_METHOD(Engine::nearest) //
  * });
  */
 // clang-format on
-NAN_METHOD(Engine::table) //
+Napi::Value Engine::table(const Napi::CallbackInfo& info) //
 {
     async(info, &argumentsToTableParameter, &osrm::OSRM::Table, true);
 }
@@ -425,7 +428,7 @@ NAN_METHOD(Engine::table) //
  * });
  */
 // clang-format on
-NAN_METHOD(Engine::tile)
+Napi::Value Engine::tile(const Napi::CallbackInfo& info)
 {
     asyncForTiles(info, &argumentsToTileParameters, &osrm::OSRM::Tile, {/*unused*/});
 }
@@ -479,7 +482,7 @@ NAN_METHOD(Engine::tile)
  *
  */
 // clang-format on
-NAN_METHOD(Engine::match) //
+Napi::Value Engine::match(const Napi::CallbackInfo& info) //
 {
     async(info, &argumentsToMatchParameter, &osrm::OSRM::Match, true);
 }
@@ -549,7 +552,7 @@ NAN_METHOD(Engine::match) //
  * });
  */
 // clang-format on
-NAN_METHOD(Engine::trip) //
+Napi::Value Engine::trip(const Napi::CallbackInfo& info) //
 {
     async(info, &argumentsToTripParameter, &osrm::OSRM::Trip, true);
 }

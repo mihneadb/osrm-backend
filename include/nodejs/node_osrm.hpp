@@ -5,7 +5,8 @@
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
-#include <nan.h>
+#include <napi.h>
+#include <uv.h>
 #pragma GCC diagnostic pop
 
 #include <memory>
@@ -13,25 +14,25 @@
 namespace node_osrm
 {
 
-struct Engine final : public Nan::ObjectWrap
+struct Engine final : public Napi::ObjectWrap
 {
-    using Base = Nan::ObjectWrap;
+    using Base = Napi::ObjectWrap;
 
-    static NAN_MODULE_INIT(Init);
+    static Napi::Object Init(Napi::Env env, Napi::Object exports);
 
-    static NAN_METHOD(New);
+    static Napi::Value New(const Napi::CallbackInfo& info);
 
-    static NAN_METHOD(route);
-    static NAN_METHOD(nearest);
-    static NAN_METHOD(table);
-    static NAN_METHOD(tile);
-    static NAN_METHOD(match);
-    static NAN_METHOD(trip);
+    static Napi::Value route(const Napi::CallbackInfo& info);
+    static Napi::Value nearest(const Napi::CallbackInfo& info);
+    static Napi::Value table(const Napi::CallbackInfo& info);
+    static Napi::Value tile(const Napi::CallbackInfo& info);
+    static Napi::Value match(const Napi::CallbackInfo& info);
+    static Napi::Value trip(const Napi::CallbackInfo& info);
 
     Engine(osrm::EngineConfig &config);
 
     // Thread-safe singleton accessor
-    static Nan::Persistent<v8::Function> &constructor();
+    static Napi::FunctionReference &constructor();
 
     // Ref-counted OSRM alive even after shutdown until last callback is done
     std::shared_ptr<osrm::OSRM> this_;
@@ -39,6 +40,6 @@ struct Engine final : public Nan::ObjectWrap
 
 } // ns node_osrm
 
-NODE_MODULE(osrm, node_osrm::Engine::Init)
+NODE_API_MODULE(osrm, node_osrm::Engine::Init)
 
 #endif
